@@ -1,0 +1,16 @@
+<li class="divider"></li>
+<li class="has-form">
+    <form method="get" action="{{ paths.root }}search" id="searchform" enctype="text/plain">
+          <div class="row">
+            <div>
+                <div class="input-field">
+                    <input id="search" type="search" value="{% if search is defined %}{{ search|escape }}{% endif %}" name="search">
+                    <label for="search">Search</label>
+                </div>
+            </div>
+            <div>
+                 <button type="submit" class="waves-effect waves-light btn">{{ __("Search") }}</button>
+            </div>
+          </div>
+  </form>
+</li>

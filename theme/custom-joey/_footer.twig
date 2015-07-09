@@ -1,0 +1,30 @@
+</div>
+</div>
+
+    <!-- Footer -->
+    <footer class="blue row">
+        <div class="col s12">
+            <div class="col s6">
+                <p>{{ __("This website is <a href='%url%' target='_blank' title='Sophisticated, lightweight & simple CMS'>Built with Bolt</a>.",{'%url%':'http://bolt.cm'}) }}
+                </p>
+            </div>
+            <div class="col s6">
+                <ul class="inline-list">
+                    {{ menu() }}
+                </ul>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ paths.theme }}javascripts/jquery-2.1.0.min.js"></script>
+    <script src="{{ paths.theme }}javascripts/modernizr.js"></script>
+
+    {# Bolt comes with Magnific Popup, as it's used in the backend. We can use it here, or you can
+       just swap it out for the image-viewing script of your choice. Or delete it altogether. #}
+    <script src="{{ paths.theme }}javascripts/jquery.magnific-popup.min.js"></script>
+    <script src="{{ paths.theme }}bower_components/materialize/dist/js/materialize.min.js">
+
+    <script src="{{ paths.theme }}javascripts/app.js" async defer></script>
+
+</body>
+</html>

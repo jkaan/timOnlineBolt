@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html class="no-js" lang="{{ htmllang() }}">
+<head>
+    <meta charset="utf-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {# make sure we always display a proper title: The record's title if there is one, appended with the
+       sitename. If there is no title, we append the sitename with the payoff, if there is one. #}
+    <title>
+        {% if record.title is defined %}{{ record.title|striptags }} | {% endif %}
+            {{ app.config.get('general/sitename') }}
+    </title>
+
+    <link href='//fonts.googleapis.com/css?family=Open+Sans:400,600' rel='stylesheet' type='text/css'>
+
+    {# paths.theme is always a correct path to the current theme. Even if you rename the theme-folder,
+       this will keep working. See the documentation on paths: http://docs.bolt.cm/internals#paths #}
+    <link rel="stylesheet" href="{{ paths.theme }}bower_components/materialize/dist/css/materialize.min.css">
+    <link rel="stylesheet" href="{{ paths.theme }}bower_components/fontawesome/css/font-awesome.min.css">
+    <link rel="stylesheet" href="{{ paths.theme }}css/app.css">
+
+    {# Bolt comes with Magnific Popup, as it's used in the backend. We can use it here, or you can
+      just swap it out for the image-viewing script of your choice. Or delete it altogether. #}
+    <link rel="stylesheet" href="{{ paths.theme }}css/magnific-popup.css">
+</head>
+<body>
+
+{# Note: If you plan to modify this theme, be sure to make a _copy_ first. If you don't,
+   this theme will be overwritten when you update Bolt in the future. Just copy the 'base-2014'
+   folder to a new folder inside the 'theme/' folder, update the 'theme:' setting in
+   config.yml, and you're good to go. Happy tweaking! :-) #}
+
+<div class="row">
+    <header>
+        <nav class="top-bar blue" data-topbar>
+          <div class="nav-wrapper">
+            <a href="{{ paths.root }}" class="brand-logo">{{ app.config.get('general/sitename') }}</a>
+
+            <section class="top-bar-section">
+              <ul id="nav-mobile" class="right hide-on-med-and-down">
+                    {# Include the menu, as defined in config/menu.yml. Note that this theme comes with it's own _sub_menu.twig. If this file wasn't included in the current theme, the default menu template in app/theme_defaults/_sub_menu.twig would be used. #}
+                    {{ menu('main', '_sub_menu.twig') }}
+
+                    {# Include the '_sub_searchbox.twig' template, for the searchbox. If this file wasn't included in the theme, the default searchbox template in app/theme_defaults/_sub_searchbox.twig would be used. #}
+                    {% include '_sub_searchbox.twig' %}
+              </ul>
+            </section>
+            <a href="#" data-activates="nav-mobile" class="button-collapse"><i class="mdi-navigation-menu"></i></a>
+          </div>
+        </nav>
+        <!-- End header -->
+
+    </header>
+</div>
+
+
+
+<div class="row">
+    <div class="container">
