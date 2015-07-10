@@ -70,3 +70,15 @@ footer.row {
 .brand-logo {
     margin-left: 10px;
 }
+
+article ul, article ul li {
+    list-style-type: circle;
+}
+
+article ul {
+    margin-left: 18px;
+}
+
+.container a:hover {
+    text-decoration: underline;
+}

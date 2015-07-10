@@ -20,6 +20,21 @@
 </div>
 {% endif %}
 
+<div class="panel panel-default contenttype-statistics">
+    <div class="panel-heading">
+        <b>#</b> Amount of content types
+    </div>
+    <div class="panel-body">
+        <ul class="contenttypes-amount">
+            {% for nameOfContentType, amountOfContentType in amountOfContentTypes() %}
+                <li>
+                    <div class="heading">{{ nameOfContentType|capitalize }}: {{ amountOfContentType }}</div>
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
 {# News #}
 {{ render(path('dashboardnews')) }}
 

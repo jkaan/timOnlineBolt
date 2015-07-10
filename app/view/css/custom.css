@@ -1,0 +1,3 @@
+.contenttypes-amount li:before {
+    content: none !important;
+}

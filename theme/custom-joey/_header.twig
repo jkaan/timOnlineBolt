@@ -44,8 +44,12 @@
                     {# Include the '_sub_searchbox.twig' template, for the searchbox. If this file wasn't included in the theme, the default searchbox template in app/theme_defaults/_sub_searchbox.twig would be used. #}
                     {% include '_sub_searchbox.twig' %}
               </ul>
+              <ul id="slide-out" class="side-nav">
+                  {# Include the menu, as defined in config/menu.yml. Note that this theme comes with it's own _sub_menu.twig. If this file wasn't included in the current theme, the default menu template in app/theme_defaults/_sub_menu.twig would be used. #}
+                  {{ menu('main', '_sub_menu.twig') }}
+              </ul>
             </section>
-            <a href="#" data-activates="nav-mobile" class="button-collapse"><i class="mdi-navigation-menu"></i></a>
+            <a href="#" data-activates="slide-out" class="button-collapse"><i class="mdi-navigation-menu"></i></a>
           </div>
         </nav>
         <!-- End header -->

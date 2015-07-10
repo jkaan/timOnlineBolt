@@ -1,0 +1,7 @@
+.contenttypes-amount {
+    list-style-type: none;
+}
+
+.contenttypes-amount li {
+    display: inline-block;
+}

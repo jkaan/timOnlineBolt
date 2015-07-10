@@ -3,7 +3,7 @@
 <!-- Main Page Content and Sidebar -->
 
     <!-- Main Blog Content -->
-    <div class="col s8">
+    <div class="col l8 m12 s12">
 
         <article>
             {% if record is defined %}
@@ -18,7 +18,7 @@
                 {% if home.image is defined and home.image is not empty %}
                     <div class="imageholder">
                         <a href="{{ image(home.image) }}">
-                            <img src="{{ thumbnail(home.image, 596, 300) }}">
+                            <img src="{{ thumbnail(home.image, 400, 150) }}">
                         </a>
                     </div>
                 {% endif %}
@@ -88,7 +88,5 @@
     {% include '_aside.twig' %}
 
 <!-- End Main Content and Sidebar -->
-
-
 
 {% include '_footer.twig' %}
