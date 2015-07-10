@@ -11,10 +11,10 @@
 #  no unused messages
 #  no untranslated messages
 #  no untranslated keyword based messages
-# 382 translations
+# 379 translations
 # 132 keyword based translations
 
-#--- 382 translations ---------------------------------------------------------
+#--- 379 translations ---------------------------------------------------------
 
 "%contenttypes% overview": "%contenttypes% överblick"
 "%name% № %id%": "%name% № %id%"
@@ -225,8 +225,8 @@ contenttypes.general.choose-an-entry: "Välj ett inlägg"
 "Permissions": "Rättigheter"
 "Place on stack": "Lägg på filhögen"
 "Please choose the record you want to link to:": "Välj dokumentet du vill länka till:"
-"Please enter a new file name!": "Välj ett nytt filnamn!"
-"Please enter a new folder name!": "Välj ett nytt mappnamn!"
+"Please enter a new file name": "Välj ett nytt filnamn"
+"Please enter a new folder name": "Välj ett nytt mappnamn"
 "Please log on.": "Vänligen logga in."
 "Please provide a username": "Vänligen skriv in ett användarnamn"
 "Prefill database": "Lägg till exempelinnehåll"
@@ -244,6 +244,7 @@ contenttypes.general.choose-an-entry: "Välj ett inlägg"
 "Read more": "Läs mer"
 "Recent %contenttypes%": "Senaste %contenttypes%"
 "Related content": "Relaterat innehåll"
+"Related content:": "Relaterat innehåll:"
 "Relationships": "Relationer"
 "Rename %foldername%": "Döp om %foldername%"
 "Roles": "Roller"
@@ -397,9 +398,6 @@ users.your-password: "Ditt lösenord"
 "none": "ingen"
 "of": "av"
 "show all": "visa alla"
-"This template adds new fields. Save, then refresh to see these changes.": "Denna mallen lägger till fler fält. Spara, och ladda sedan om för att se de nya fälten"
-"You may lose some of your template fields with this change. Go to the template section and note down the values before doing this.": "Du kan komma att förlora vissa fält med den här ändringen. Go till sektionen Mall och skriv ner innehållet om du vill behålla det."
-"Warning": "Varning"
 
 #--- 132 keyword based translations -------------------------------------------
 

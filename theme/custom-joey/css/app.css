@@ -1,0 +1,84 @@
+.headerphoto {
+    margin: 0;
+    padding: 0;
+}
+
+.row:first-child {
+    margin-bottom: 0;
+}
+
+ul.right {
+    margin-right: 20px;
+}
+
+#searchform div {
+    display: inline-block;
+}
+
+.dropdown li {
+    float: none;
+}
+
+nav ul li.has-form {
+    transition: none;
+    -webkit-transition: none;
+}
+
+nav ul li.has-form:hover {
+    background-color: inherit;
+}
+
+.input-field input[type=search]:focus {
+    background-color: inherit;
+    color: white;
+}
+
+.input-field input[type=search]:focus + label {
+    color: #e67e22;
+}
+
+.input-field input[type=search] + label {
+    color: white;
+}
+
+.btn {
+    background-color: #e67e22;
+}
+
+.btn:hover {
+    background-color: #ff9823;
+}
+
+/* Change active page on pager background's color */
+.pagination li.active {
+    background-color: #2196F3;
+}
+
+/* Change all occurrences of links to orange color in the footer */
+footer a {
+    color: #ff8f4a;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+
+footer.row {
+    margin-bottom: 0;
+}
+
+.brand-logo {
+    margin-left: 10px;
+}
+
+article ul, article ul li {
+    list-style-type: circle;
+}
+
+article ul {
+    margin-left: 18px;
+}
+
+.container a:hover {
+    text-decoration: underline;
+}

@@ -3,11 +3,14 @@
 namespace Bolt;
 
 use Bolt;
-use Bolt\Asset\Target;
+use Bolt\Composer\Action\BoltExtendJson;
 use Bolt\Extensions\ExtensionInterface;
+use Bolt\Extensions\Snippets\Location as SnippetLocation;
+use Bolt\Helpers\Str;
 use Bolt\Translation\Translator as Trans;
 use Composer\Autoload\ClassLoader;
 use Composer\Json\JsonFile;
+use Composer\Json\JsonManipulator;
 use Monolog\Logger;
 use Symfony\Component\Finder\Finder;
 
@@ -30,7 +33,14 @@ class Extensions
      *
      * @var ExtensionInterface[]
      */
-    private $enabled = [];
+    private $enabled = array();
+
+    /**
+     * Queue with snippets of HTML to insert.
+     *
+     * @var array
+     */
+    private $snippetqueue;
 
     /**
      * Queue with widgets to insert.
@@ -44,7 +54,7 @@ class Extensions
      *
      * @var array
      */
-    private $menuoptions = [];
+    private $menuoptions = array();
 
     /**
      * Number of registered extensions that need to be able to send mail.
@@ -52,6 +62,21 @@ class Extensions
      * @var integer
      */
     private $mailsenders = 0;
+
+    /**
+     * Whether or not to add jQuery.
+     *
+     * @var bool
+     */
+    private $addjquery;
+
+    /**
+     * List of comments in snippets, these must not be replaced, so they are
+     * stored here while the rest of the snippet is processed.
+     *
+     * @var array
+     */
+    private $matchedcomments;
 
     /**
      * Contains all initialized extensions.
@@ -65,7 +90,15 @@ class Extensions
      *
      * @var array
      */
-    public $composer = [];
+    public $composer = array();
+
+    /**
+     * Contains a list of all css and js assets added through addCss and
+     * addJavascript functions.
+     *
+     * @var array
+     */
+    private $assets;
 
     private $isInitialized = false;
 
@@ -73,6 +106,18 @@ class Extensions
     {
         $this->app = $app;
         $this->basefolder = $app['resources']->getPath('extensions');
+        $this->matchedcomments = array();
+
+        if ($app['config']->get('general/add_jquery')) {
+            $this->addjquery = true;
+        } else {
+            $this->addjquery = false;
+        }
+
+        $this->assets = array(
+            'css' => array(),
+            'js'  => array()
+        );
     }
 
     /**
@@ -169,9 +214,9 @@ class Extensions
             return;
         }
 
-        // If the composer.json file doesn't exist, we should create it now
         if (!$this->app['filesystem']->has('extensions://composer.json')) {
-            $this->app['extend.action']['json']->updateJson();
+            $initjson = new BoltExtendJson($this->app['extend.manager']->getOptions());
+            $this->json = $initjson->updateJson($this->app);
         }
 
         $finder = new Finder();
@@ -195,10 +240,10 @@ class Extensions
     private function setLocalExtensionPsr4(Finder $finder)
     {
         // Get Bolt's extension JSON
-        $composerOptions = $this->app['extend.action.options'];
+        $composerOptions = $this->app['extend.manager']->getOptions();
         $composerJsonFile = new JsonFile($composerOptions['composerjson']);
         $boltJson = $composerJsonFile->read();
-        $boltPsr4 = isset($boltJson['autoload']['psr-4']) ? $boltJson['autoload']['psr-4'] : [];
+        $boltPsr4 = isset($boltJson['autoload']['psr-4']) ? $boltJson['autoload']['psr-4'] : array();
 
         foreach ($finder as $file) {
             try {
@@ -232,7 +277,7 @@ class Extensions
      */
     private function getLocalExtensionPsr4($path, array $autoload)
     {
-        $psr4 = [];
+        $psr4 = array();
         foreach ($autoload as $namespace => $namespacePaths) {
             $paths = null;
             if (is_string($namespacePaths)) {
@@ -297,20 +342,6 @@ class Extensions
     }
 
     /**
-     * Get an initialized extension object.
-     *
-     * @param string $name
-     *
-     * @return object|null
-     */
-    public function getInitialized($name)
-    {
-        if (array_key_exists($name, $this->initialized)) {
-            return $this->initialized[$name];
-        }
-    }
-
-    /**
      * Gets the composer config for an extension.
      *
      * @param string $extensionName
@@ -319,7 +350,7 @@ class Extensions
      */
     public function getComposerConfig($extensionName)
     {
-        return isset($this->composer[$extensionName]) ? $this->composer[$extensionName] : [];
+        return isset($this->composer[$extensionName]) ? $this->composer[$extensionName] : array();
     }
 
     /**
@@ -344,52 +375,16 @@ class Extensions
     {
         $name = $extension->getName();
 
-        try {
-            $this->loadExtensionConfig($extension, $name);
-            $this->loadExtensionInitialize($extension, $name);
-            $this->loadExtensionTwigGlobal($extension, $name);
-            $this->loadExtensionTwig($extension, $name);
-        } catch (\Exception $e) {
-            // Should be already caught, go into slient mode
-        }
-
-        // Flag the extension as initialised
-        $this->initialized[$name] = $extension;
-
-        // If an extension makes it known it sends email, increase the counter
-        if (is_callable([$extension, 'sendsMail']) && $extension->sendsMail()) {
-            $this->mailsenders++;
-        }
-    }
-
-    /**
-     * Attempt to get extension YAML config.
-     *
-     * @param ExtensionInterface $extension
-     * @param string             $name
-     *
-     * @throws \Exception
-     */
-    private function loadExtensionConfig(ExtensionInterface $extension, $name)
-    {
+        // Attempt to get extension YAML config
         try {
             $extension->getConfig();
         } catch (\Exception $e) {
             $this->logInitFailure('Failed to load YAML config', $name, $e, Logger::ERROR);
-            throw $e;
-        }
-    }
 
-    /**
-     * Initialise the extension.
-     *
-     * @param ExtensionInterface $extension
-     * @param string             $name
-     *
-     * @throws \Exception
-     */
-    private function loadExtensionInitialize(ExtensionInterface $extension, $name)
-    {
+            return;
+        }
+
+        // Call extension initialize()
         try {
             $extension->initialize();
 
@@ -404,62 +399,39 @@ class Extensions
 
                             return $twig;
                         }
-                ));
+                    )
+                );
             }
         } catch (\Exception $e) {
             $this->logInitFailure('Initialisation failed', $name, $e, Logger::ERROR);
 
-            throw $e;
-        }
-    }
-
-    /**
-     * Add an object of this extension to the global Twig scope.
-     *
-     * @param ExtensionInterface $extension
-     * @param string             $name
-     *
-     * @throws \Exception
-     */
-    private function loadExtensionTwigGlobal(ExtensionInterface $extension, $name)
-    {
-        try {
-            $namespace = $this->getNamespace($extension);
-            if (!empty($namespace)) {
-                $this->app['twig'] = $this->app->share(
-                    $this->app->extend(
-                        'twig',
-                        function (\Twig_Environment $twig) use ($namespace, $extension) {
-                            $twig->addGlobal($namespace, $extension);
-
-                            return $twig;
-                        }
-                ));
-            }
-        } catch (\Exception $e) {
-            $this->logInitFailure('Initialisation failed', $name, $e, Logger::ERROR);
-
-            throw $e;
-        }
-    }
-
-    /**
-     * Add Twig extensions.
-     *
-     * @param ExtensionInterface $extension
-     * @param string             $name
-     *
-     * @throws \Exception
-     */
-    private function loadExtensionTwig(ExtensionInterface $extension, $name)
-    {
-        if (!is_callable([$extension, 'getTwigExtensions'])) {
             return;
         }
 
+        // Flag the extension as initialised
+        $this->initialized[$name] = $extension;
+
+        // If an extension makes it known it sends email, increase the counter
+        if (is_callable(array($extension, 'sendsMail')) && $extension->sendsMail()) {
+            $this->mailsenders++;
+        }
+
+        // Get the extension defined snippets
+        try {
+            $this->getSnippets($name);
+        } catch (\Exception $e) {
+            $this->logInitFailure('Snippet loading failed', $name, $e, Logger::ERROR);
+
+            return;
+        }
+
+        // Add Twig extensions
+        if (!is_callable(array($extension, 'getTwigExtensions'))) {
+            return;
+        }
         /** @var \Twig_Extension[] $extensions */
         $twigExtensions = $extension->getTwigExtensions();
-        $addTwigExFunc = [$this, 'addTwigExtension'];
+        $addTwigExFunc = array($this, 'addTwigExtension');
         foreach ($twigExtensions as $twigExtension) {
             $this->app['twig'] = $this->app->share(
                 $this->app->extend(
@@ -469,9 +441,10 @@ class Extensions
 
                         return $twig;
                     }
-            ));
+                )
+            );
 
-            if (!is_callable([$extension, 'isSafe']) || !$extension->isSafe()) {
+            if (!is_callable(array($extension, 'isSafe')) || !$extension->isSafe()) {
                 continue;
             }
             $this->app['safe_twig'] = $this->app->share(
@@ -482,7 +455,8 @@ class Extensions
 
                         return $twig;
                     }
-            ));
+                )
+            );
         }
     }
 
@@ -504,48 +478,28 @@ class Extensions
 
     /**
      * Add jQuery to the output.
-     *
-     * @deprecated Since 2.3 will be removed in Bolt 3.0
      */
     public function addJquery()
     {
-        $this->app['config']->set('general/add_jquery', true);
+        $this->addjquery = true;
     }
 
     /**
      * Don't add jQuery to the output.
-     *
-     * @deprecated Since 2.3 will be removed in Bolt 3.0
      */
     public function disableJquery()
     {
-        $this->app['config']->set('general/add_jquery', false);
+        $this->addjquery = false;
     }
 
     /**
-     * Legacy function that returns a list of all css and js assets that are
-     * added via extensions.
-     *
-     * @deprecated Use $app['asset.queue.file']->getQueue() and/or $app['asset.queue.snippet']->getQueue()
+     * Returns a list of all css and js assets that are added via extensions.
      *
      * @return array
      */
     public function getAssets()
     {
-        $files = $this->app['asset.queue.file']->getQueue();
-        $assets = [
-            'css' => [],
-            'js'  => []
-        ];
-
-        foreach ($files['javascript'] as $file) {
-            $assets['js'][] = $file->getFileName();
-        }
-        foreach ($files['stylesheet'] as $file) {
-            $assets['css'][] = $file->getFileName();
-        }
-
-        return $assets;
+        return $this->assets;
     }
 
     private function getNamespace($extension)
@@ -569,20 +523,25 @@ class Extensions
      *                         'priority' - Loading priority
      *                         'attrib'   - A string containing either/or 'defer', and 'async'
      */
-    public function addCss($filename, $options = [])
+    public function addCss($filename, $options = array())
     {
         // Handle pre-2.2 function parameters, namely $late and $priority
         if (!is_array($options)) {
             $args = func_get_args();
 
-            $options = [
+            $options = array(
                 'late'     => isset($args[1]) ? isset($args[1]) : false,
                 'priority' => isset($args[2]) ? isset($args[2]) : 0,
                 'attrib'   => false
-            ];
+            );
         }
 
-        $this->app['asset.queue.file']->add('stylesheet', $filename, $options);
+        $this->assets['css'][md5($filename)] = array(
+            'filename' => $filename,
+            'late'     => isset($options['late'])     ? $options['late']     : false,
+            'priority' => isset($options['priority']) ? $options['priority'] : 0,
+            'attrib'   => isset($options['attrib'])   ? $options['attrib']   : false
+        );
     }
 
     /**
@@ -594,20 +553,25 @@ class Extensions
      *                         'priority' - Loading priority
      *                         'attrib'   - A string containing either/or 'defer', and 'async'
      */
-    public function addJavascript($filename, $options = [])
+    public function addJavascript($filename, $options = array())
     {
         // Handle pre-2.2 function parameters, namely $late and $priority
         if (!is_array($options)) {
             $args = func_get_args();
 
-            $options = [
+            $options = array(
                 'late'     => isset($args[1]) ? isset($args[1]) : false,
                 'priority' => isset($args[2]) ? isset($args[2]) : 0,
                 'attrib'   => false
-            ];
+            );
         }
 
-        $this->app['asset.queue.file']->add('javascript', $filename, $options);
+        $this->assets['js'][md5($filename)] = array(
+            'filename' => $filename,
+            'late'     => isset($options['late'])     ? $options['late']     : false,
+            'priority' => isset($options['priority']) ? $options['priority'] : 0,
+            'attrib'   => isset($options['attrib'])   ? $options['attrib']   : false
+        );
     }
 
     /**
@@ -625,12 +589,13 @@ class Extensions
      */
     public function insertWidget($type, $location, $callback, $extensionname, $additionalhtml = '', $defer = true, $cacheduration = 180, $extraparameters = "")
     {
-        $authSession = $this->app['session']->get('authentication');
-        $sessionkey = $authSession->getToken()->getToken();
+        $user = $this->app['session']->get('user');
+
+        $sessionkey = !empty($user['sessionkey']) ? $user['sessionkey'] : '';
 
         $key = substr(md5(sprintf("%s%s%s%s", $sessionkey, $type, $location, !is_array($callback) ? $callback : get_class($callback[0]) . $callback[1])), 0, 8);
 
-        $this->widgetqueue[] = [
+        $this->widgetqueue[] = array(
             'type'            => $type,
             'location'        => $location,
             'callback'        => $callback,
@@ -640,7 +605,7 @@ class Extensions
             'defer'           => $defer,
             'extraparameters' => $extraparameters,
             'key'             => $key
-        ];
+        );
     }
 
     /**
@@ -707,115 +672,476 @@ class Extensions
     }
 
     /**
-     * @deprecated since 2.3 and will removed in Bolt 3.
+     * Call the 'getSnippets' function of an initialized extension, and make sure the snippets are initialized.
      */
-    public function insertSnippet($location, $callback, $extensionname = 'core', $extraparameters = [])
+    public function getSnippets($extensionname)
     {
-        $this->app['asset.queue.snippet']->add($location, $callback, $extensionname, (array) $extraparameters);
+        $snippets = $this->initialized[$extensionname]->getSnippets();
+
+        if (!empty($snippets)) {
+            foreach ($snippets as $snippet) {
+                // Make sure 'snippet[2]' is the correct name.
+                $snippet[2] = $extensionname;
+                if (!isset($snippet[3])) {
+                    $snippet[3] = '';
+                }
+                $this->insertSnippet($snippet[0], $snippet[1], $snippet[2], $snippet[3]);
+            }
+        }
     }
 
     /**
-     * @deprecated since 2.3 and will removed in Bolt 3.
+     * Insert a snippet. And by 'insert' we actually mean 'add it to the queue, to be processed later'.
+     *
+     * @param        $location
+     * @param        $callback
+     * @param string $extensionname
+     * @param string $extraparameters
+     */
+    public function insertSnippet($location, $callback, $extensionname = 'core', $extraparameters = '')
+    {
+        $key = md5($extensionname . $callback . $location);
+
+        $this->snippetqueue[$key] = array(
+            'location'        => $location,
+            'callback'        => $callback,
+            'extension'       => $extensionname,
+            'extraparameters' => $extraparameters
+        );
+    }
+
+    /**
+     * Clears the snippet queue.
      */
     public function clearSnippetQueue()
     {
-        $this->app['asset.queue.snippet']->clear();
+        $this->snippetqueue = array();
     }
 
-    /**
-     * @deprecated since 2.3 and will removed in Bolt 3.
-     */
     public function processSnippetQueue($html)
     {
-        return $this->app['asset.queue.snippet']->process($html);
+        // First, gather all html <!-- comments -->, because they shouldn't be
+        // considered for replacements. We use a callback, so we can fill our
+        // $this->matchedcomments array
+        $html = preg_replace_callback('/<!--(.*)-->/Uis', array($this, 'pregcallback'), $html);
+
+        // Replace the snippets in the queue.
+        foreach ($this->snippetqueue as $item) {
+
+            // Get the snippet, either by using a callback function, or else use the
+            // passed string as-is.
+
+            if (($item['extension'] != "core") && method_exists($this->initialized[$item['extension']], $item['callback'])) {
+                // Snippet is defined in the extension itself.
+                $snippet = $this->initialized[$item['extension']]->parseSnippet($item['callback'], $item['extraparameters']);
+            } elseif (function_exists($item['callback'])) {
+                // Snippet is a callback in the 'global scope'
+                $snippet = call_user_func($item['callback'], $this->app, $item['extraparameters']);
+            } else {
+                // Insert the 'callback' as a string.
+                $snippet = $item['callback'];
+            }
+
+            // then insert it into the HTML, somewhere.
+            switch ($item['location']) {
+                case SnippetLocation::END_OF_HEAD:
+                case SnippetLocation::AFTER_HEAD_JS: // same as end of head because we cheat a little
+                case SnippetLocation::AFTER_HEAD_CSS: // same as end of head because we cheat a little
+                case SnippetLocation::AFTER_HEAD_META: // same as end of head because meta tags are unordered
+                    $html = $this->insertEndOfHead($snippet, $html);
+                    break;
+                case SnippetLocation::AFTER_META:
+                    $html = $this->insertAfterMeta($snippet, $html);
+                    break;
+                case SnippetLocation::BEFORE_CSS:
+                    $html = $this->insertBeforeCss($snippet, $html);
+                    break;
+                case SnippetLocation::AFTER_CSS:
+                    $html = $this->insertAfterCss($snippet, $html);
+                    break;
+                case SnippetLocation::BEFORE_JS:
+                    $html = $this->insertBeforeJs($snippet, $html);
+                    break;
+                case SnippetLocation::AFTER_JS:
+                    $html = $this->insertAfterJs($snippet, $html);
+                    break;
+                case SnippetLocation::START_OF_HEAD:
+                case SnippetLocation::BEFORE_HEAD_JS: // same as start of head because we cheat a little
+                case SnippetLocation::BEFORE_HEAD_CSS: // same as start of head because we cheat a little
+                case SnippetLocation::BEFORE_HEAD_META: // same as start of head because meta tags are unordered
+                    $html = $this->insertStartOfHead($snippet, $html);
+                    break;
+                case SnippetLocation::START_OF_BODY:
+                case SnippetLocation::BEFORE_BODY_JS: // same as start of body because we cheat a little
+                case SnippetLocation::BEFORE_BODY_CSS: // same as start of body because we cheat a little
+                    $html = $this->insertStartOfBody($snippet, $html);
+                    break;
+                case SnippetLocation::END_OF_BODY:
+                case SnippetLocation::AFTER_BODY_JS: // same as end of body because we cheat a little
+                case SnippetLocation::AFTER_BODY_CSS: // same as end of body because we cheat a little
+                    $html = $this->insertEndOfBody($snippet, $html);
+                    break;
+                case SnippetLocation::END_OF_HTML:
+                    $html = $this->insertEndOfHtml($snippet, $html);
+                    break;
+
+                default:
+                    $html .= $snippet . "\n";
+                    break;
+            }
+        }
+
+        // While this looks slightly illogical, our CLI tests want to see that
+        // jQuery can be inserted, but we don't want it inserted on either the
+        // backend or AJAX requests.
+        $end = $this->app['config']->getWhichEnd();
+        if ($this->addjquery === true && ($end === 'frontend' || $end === 'cli')) {
+            $html = $this->insertJquery($html);
+        }
+
+        // Finally, replace back ###comment### with its original comment.
+        if (!empty($this->matchedcomments)) {
+            $html = preg_replace(array_keys($this->matchedcomments), $this->matchedcomments, $html, 1);
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 and will removed in Bolt 3.
+     * Insert all assets in template. Use sorting by priority.
+     *
+     * @param $html
+     *
+     * @return string
      */
     public function processAssets($html)
     {
-        return $this->app['asset.queue.file']->process($html);
+        foreach ($this->getAssets() as $type => $files) {
+
+            // Use http://en.wikipedia.org/wiki/Schwartzian_transform for stable sort
+            // We use create_function(), because it's faster than closure
+            // decorate
+            array_walk($files, create_function('&$v, $k', '$v = array($v[\'priority\'], $k, $v);'));
+            // sort
+            sort($files);
+            // undecorate
+            array_walk($files, create_function('&$v, $k', '$v = $v[2];'));
+
+            foreach ($files as $file) {
+                $late     = $file['late'];
+                $filename = $file['filename'];
+                $attrib   = $file['attrib'] ? ' ' . $file['attrib'] : '';
+
+                if ($type === 'js') {
+                    $htmlJs = sprintf('<script src="%s"%s></script>', $filename, $attrib);
+                    if ($late) {
+                        $html = $this->insertEndOfBody($htmlJs, $html);
+                    } else {
+                        $html = $this->insertAfterJs($htmlJs, $html);
+                    }
+                } else {
+                    $htmlCss = sprintf('<link rel="stylesheet" href="%s" media="screen">', $filename);
+                    if ($late) {
+                        $html = $this->insertEndOfBody($htmlCss, $html);
+                    } else {
+                        $html = $this->insertBeforeCss($htmlCss, $html);
+                    }
+                }
+            }
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into thestart of the head section of
+     * an HTML page, right after the <head> tag.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertStartOfHead($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::START_OF_HEAD, $html);
+        // first, attempt to insert it after the <head> tag, matching indentation.
+
+        if (preg_match("~^([ \t]*)<head(.*)~mi", $html, $matches)) {
+
+            // Try to insert it after <head>
+            $replacement = sprintf("%s\n%s\t%s", $matches[0], $matches[1], $tag);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into thestart of the head section of
+     * an HTML page, right after the <head> tag.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertStartOfBody($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::START_OF_BODY, $html);
+        // first, attempt to insert it after the <body> tag, matching indentation.
+        if (preg_match("~^([ \t]*)<body(.*)~mi", $html, $matches)) {
+
+            // Try to insert it after <body>
+            $replacement = sprintf("%s\n%s\t%s", $matches[0], $matches[1], $tag);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into the head section of an HTML
+     * page, right before the </head> tag.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertEndOfHead($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::END_OF_HEAD, $html);
+        // first, attempt to insert it before the </head> tag, matching indentation.
+        if (preg_match("~^([ \t]*)</head~mi", $html, $matches)) {
+
+            // Try to insert it just before </head>
+            $replacement = sprintf("%s\t%s\n%s", $matches[1], $tag, $matches[0]);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into the body section of an HTML
+     * page, right before the </body> tag.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertEndOfBody($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::END_OF_BODY, $html);
+        // first, attempt to insert it before the </body> tag, matching indentation.
+        if (preg_match("~^([ \t]*)</body~mi", $html, $matches)) {
+
+            // Try to insert it just before </head>
+            $replacement = sprintf("%s\t%s\n%s", $matches[1], $tag, $matches[0]);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into the html section of an HTML
+     * page, right before the </html> tag.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertEndOfHtml($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::END_OF_HTML, $html);
+        // first, attempt to insert it before the </body> tag, matching indentation.
+        if (preg_match("~^([ \t]*)</html~mi", $html, $matches)) {
+
+            // Try to insert it just before </head>
+            $replacement = sprintf("%s\t%s\n%s", $matches[1], $tag, $matches[0]);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into the head section of an HTML page.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertAfterMeta($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::AFTER_META, $html);
+        // first, attempt to insert it after the last meta tag, matching indentation.
+        if (preg_match_all("~^([ \t]*)<meta (.*)~mi", $html, $matches)) {
+
+            // matches[0] has some elements, the last index is -1, because zero indexed.
+            $last = count($matches[0]) - 1;
+            $replacement = sprintf("%s\n%s%s", $matches[0][$last], $matches[1][$last], $tag);
+            $html = Str::replaceFirst($matches[0][$last], $replacement, $html);
+        } else {
+            $html = $this->insertEndOfHead($tag, $html);
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML into the head section of an HTML page.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertAfterCss($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::AFTER_CSS, $html);
+        // first, attempt to insert it after the last <link> tag, matching indentation.
+        if (preg_match_all("~^([ \t]*)<link (.*)~mi", $html, $matches)) {
+
+            // matches[0] has some elements, the last index is -1, because zero indexed.
+            $last = count($matches[0]) - 1;
+            $replacement = sprintf("%s\n%s%s", $matches[0][$last], $matches[1][$last], $tag);
+            $html = Str::replaceFirst($matches[0][$last], $replacement, $html);
+        } else {
+            $html = $this->insertEndOfHead($tag, $html);
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML before the first CSS include in the page.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertBeforeCss($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::BEFORE_CSS, $html);
+        // first, attempt to insert it after the <body> tag, matching indentation.
+        if (preg_match("~^([ \t]*)<link(.*)~mi", $html, $matches)) {
+
+            // Try to insert it before the match
+            $replacement = sprintf("%s%s\n%s\t%s", $matches[1], $tag, $matches[0], $matches[1]);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML before the first javascript include in the page.
+     *
+     * @param string $tag
+     * @param string $html
+     *
+     * @return string
      */
     public function insertBeforeJS($tag, $html)
     {
-        return $this->app['asset.injector']->inject($tag, Target::BEFORE_JS, $html);
+        // first, attempt to insert it after the <body> tag, matching indentation.
+        if (preg_match("~^([ \t]*)<script(.*)~mi", $html, $matches)) {
+
+            // Try to insert it before the match
+            $replacement = sprintf("%s%s\n%s\t%s", $matches[1], $tag, $matches[0], $matches[1]);
+            $html = Str::replaceFirst($matches[0], $replacement, $html);
+        } else {
+
+            // Since we're serving tag soup, just append it.
+            $html .= $tag . "\n";
+        }
+
+        return $html;
     }
 
     /**
-     * @deprecated since 2.3 will be removed in 3.0
+     * Helper function to insert some HTML after the last javascript include.
+     * First in the head section, but if there is no script in the head, place
+     * it anywhere.
+     *
+     * @param string $tag
+     * @param string $html
+     * @param bool   $insidehead
+     *
+     * @return string
      */
     public function insertAfterJs($tag, $html, $insidehead = true)
     {
-        return $this->app['asset.injector']->inject($tag, Target::AFTER_JS, $html, $insidehead);
+        // Set $context: only the part until </head>, or entire document.
+        if ($insidehead) {
+            $pos = strpos($html, "</head>");
+            $context = substr($html, 0, $pos);
+        } else {
+            $context = $html;
+        }
+
+        // then, attempt to insert it after the last <script> tag within context, matching indentation.
+        if (preg_match_all("~^([ \t]*)(.*)</script>~mi", $context, $matches)) {
+            // matches[0] has some elements, the last index is -1, because zero indexed.
+            $last = count($matches[0]) - 1;
+            $replacement = sprintf("%s\n%s%s", $matches[0][$last], $matches[1][$last], $tag);
+            $html = Str::replaceFirst($matches[0][$last], $replacement, $html);
+        } elseif ($insidehead) {
+            // Second attempt: entire document
+            $html = $this->insertAfterJs($tag, $html, false);
+        } else {
+            // Just insert it at the end of the head section.
+            $html = $this->insertEndOfHead($tag, $html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * Insert jQuery, if it's not inserted already.
+     *
+     * @param string $html
+     *
+     * @return string HTML
+     */
+    private function insertJquery($html)
+    {
+        // check if jquery is not yet present. Some of the patterns that 'match' are:
+        // jquery.js
+        // jquery.min.js
+        // jquery-latest.js
+        // jquery-latest.min.js
+        // jquery-1.8.2.min.js
+        // jquery-1.5.js
+        if (!preg_match('/<script(.*)jquery(-latest|-[0-9\.]*)?(\.min)?\.js/', $html)) {
+            $jqueryfile = $this->app['paths']['app'] . 'view/js/jquery-1.11.2.min.js';
+            $html = $this->insertBeforeJs('<script src="' . $jqueryfile . '"></script>', $html);
+        }
+
+        return $html;
     }
 
     /**
@@ -837,11 +1163,11 @@ class Extensions
         }
 
         if (empty($requiredPermission) || $this->app['users']->isAllowed($requiredPermission)) {
-            $this->menuoptions[$path] = [
+            $this->menuoptions[$path] = array(
                 'label' => $label,
                 'path'  => $path,
                 'icon'  => $icon
-            ];
+            );
         }
     }
 
@@ -881,15 +1207,34 @@ class Extensions
      */
     protected function logInitFailure($msg, $extensionName, \Exception $e, $level = Logger::CRITICAL)
     {
-        $context = [
+        $context = array(
             'event'     => 'extensions',
             'exception' => $e
-        ];
+        );
 
         $this->app['logger.system']->addRecord($level, sprintf("%s for %s: %s", $msg, $extensionName, $e->getMessage()), $context);
 
-        $this->app['logger.flash']->error(
-            Trans::__("[Extension error] $msg for %ext%: %error%", ['%ext%' => $extensionName, '%error%' => $e->getMessage()])
+        $this->app['session']->getFlashBag()->add(
+            'error',
+            Trans::__("[Extension error] $msg for %ext%: %error%", array('%ext%' => $extensionName, '%error%' => $e->getMessage()))
         );
+    }
+
+    /**
+     * Callback method to identify comments and store them in the matchedcomments
+     * array. These will be put back after the replacements on the HTML are
+     * finished.
+     *
+     * @param string $c
+     *
+     * @return string The key under which the comment is stored
+     */
+    private function pregcallback($c)
+    {
+        $key = "###bolt-comment-" . count($this->matchedcomments) . "###";
+        // Add it to the array of matched comments.
+        $this->matchedcomments["/" . $key . "/"] = $c[0];
+
+        return $key;
     }
 }

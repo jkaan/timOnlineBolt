@@ -1,5 +1,5 @@
 <?php
-namespace Bolt\Configuration;
+namespace Bolt;
 
 use Bolt\Exception\FilesystemException;
 use League\Flysystem\File;
@@ -19,7 +19,7 @@ class YamlUpdater
     /** @var integer Number of lines in the file. */
     private $lines = 0;
     /** @var array Contains a line of the file per index. */
-    private $yaml = [];
+    private $yaml = array();
     /** @var File */
     private $file;
     /** @var array the parsed yml file */
@@ -61,7 +61,7 @@ class YamlUpdater
     {
         $yaml = $this->parsed;
 
-        $keyparts = explode("/", $key);
+        $keyparts = explode('/', $key);
         while ($key = array_shift($keyparts)) {
             $yaml = &$yaml[$key];
         }
@@ -83,7 +83,7 @@ class YamlUpdater
      */
     public function change($key, $value, $makebackup = true)
     {
-        $pattern = str_replace("/", ":.*", $key);
+        $pattern = str_replace('/', ":.*", $key);
         preg_match_all('/^'.$pattern.'(:\s*)/mis', $this->file->read(), $matches,  PREG_OFFSET_CAPTURE);
 
         if (count($matches[0]) > 0 && count($matches[1])) {

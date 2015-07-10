@@ -2,8 +2,8 @@
 
 namespace Bolt\Nut;
 
-use Bolt\Configuration\YamlUpdater;
 use Bolt\Exception\FilesystemException;
+use Bolt\YamlUpdater;
 use League\Flysystem\FileNotFoundException;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
@@ -45,7 +45,7 @@ class ConfigGet extends BaseCommand
             $yaml = new YamlUpdater($this->app, $file);
             $match = $yaml->get($key);
 
-            if (null !== $match) {
+            if (!empty($match)) {
                 $result = sprintf("%s: %s", $key, $match);
             } else {
                 $result = sprintf("<error>The key '%s' was not found in %s.</error>", $key, $file);

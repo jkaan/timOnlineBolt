@@ -19,6 +19,8 @@ class ExtensionsInfoService
     private $client;
     /** @var boolean */
     private $isRetry;
+    /** @var boolean */
+    private $deprecated;
 
     /**
      * Constructor function.
@@ -26,9 +28,20 @@ class ExtensionsInfoService
      * @param \GuzzleHttp\Client|\Guzzle\Service\Client $client
      * @param string                                    $site
      * @param array                                     $urls
+     * @param boolean                                   $deprecated
      */
-    public function __construct(Client $client, $site, $urls = [])
+    public function __construct($client, $site, $urls = array(), $deprecated = false)
     {
+        /** @deprecated remove when PHP 5.3 support is dropped */
+        $this->deprecated = $deprecated;
+        if (!($client instanceof \GuzzleHttp\Client || $client instanceof \Guzzle\Service\Client)) {
+            throw new \InvalidArgumentException(sprintf(
+                'First argument passed to %s must be an instance of GuzzleHttp\Client or Guzzle\Service\Client, instance of %s given.',
+                __CLASS__,
+                get_class($client)
+            ));
+        }
+
         $this->client = $client;
         $this->site   = $site;
         $this->urls   = $urls;
@@ -52,7 +65,7 @@ class ExtensionsInfoService
     public function info($package, $bolt)
     {
         $url = $this->urls['info'];
-        $params = ['package' => $package, 'bolt' => $bolt];
+        $params = array('package' => $package, 'bolt' => $bolt);
 
         return $this->execute($url, $params);
     }
@@ -70,12 +83,17 @@ class ExtensionsInfoService
      *
      * @return string|boolean
      */
-    public function execute($url, $params = [])
+    public function execute($url, $params = array())
     {
         $uri = rtrim(rtrim($this->site, '/') . '/' . ltrim($url, '/') . '?' . http_build_query($params), '?');
 
         try {
-            $result = $this->client->get($uri, ['timeout' => 10])->getBody(true);
+            if ($this->deprecated) {
+                /** @deprecated remove when PHP 5.3 support is dropped */
+                $result = $this->client->get($uri, array('timeout' => 10))->send()->getBody(true);
+            } else {
+                $result = $this->client->get($uri, array('timeout' => 10))->getBody(true);
+            }
 
             return ($this->format === 'json') ? json_decode($result) : (string) $result;
         } catch (\Exception $e) {
